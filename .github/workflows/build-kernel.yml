@@ -2,184 +2,234 @@ name: Build Kernel
 on:
   watch:
     types: [started]
-
   workflow_dispatch:
 
 jobs:
   build:
     name: Build Kernel by ${{ github.actor }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     if: github.event.repository.owner.id == github.event.sender.id
+    env:
+      WORKSPACE: ${{ github.workspace }}/kernel_workspace
+    
     steps:
-    - uses: actions/checkout@v3
+    - name: Checkout Repository
+      uses: actions/checkout@v4
+      
     - name: Setup Configuration
       run: |
-        echo "KERNEL_SOURCE=$(cat config.env | grep "KERNEL_SOURCE" | head -n 1 | cut -d "=" -f 2)" >> $GITHUB_ENV
-        echo "KERNEL_SOURCE_BRANCH=$(cat config.env | grep "KERNEL_SOURCE_BRANCH" | head -n 1 | cut -d "=" -f 2)" >> $GITHUB_ENV
-        echo "KERNEL_DEFCONFIG=$(cat config.env | grep "KERNEL_DEFCONFIG" | head -n 1 | cut -d "=" -f 2)" >> $GITHUB_ENV
-        echo "TARGET_ARCH=$(cat config.env | grep "TARGET_ARCH" | head -n 1 | cut -d "=" -f 2)" >> $GITHUB_ENV
-        echo "KERNEL_FILE=$(cat config.env | grep "KERNEL_FILE" | head -n 1 | cut -d "=" -f 2)" >> $GITHUB_ENV
-        echo "CLANG_VERSION=$(cat config.env | grep "CLANG_VERSION" | head -n 1 | cut -d "=" -f 2)" >> $GITHUB_ENV
-        echo "BUILD_EXTRA_COMMAND=$(cat config.env | grep "EXTRA_BUILD_COMMAND" | head -n 1 | cut -d ":" -f 2)" >> $GITHUB_ENV
-        echo "DISABLE-LTO=$(cat config.env | grep "DISABLE-LTO" | head -n 1 | cut -d "=" -f 2)" >> $GITHUB_ENV
-        echo "USE_KERNELSU=$(cat config.env | grep "USE_KERNELSU" | head -n 1 | cut -d "=" -f 2)" >> $GITHUB_ENV
-        echo "USE_KPROBES=$(cat config.env | grep "USE_KPROBES" | head -n 1 | cut -d "=" -f 2)" >> $GITHUB_ENV
-        echo "USE_OVERLAYFS=$(cat config.env | grep "USE_OVERLAYFS" | head -n 1 | cut -d "=" -f 2)" >> $GITHUB_ENV
-        echo "NEED_DTBO=$(cat config.env | grep "NEED_DTBO" | head -n 1 | cut -d "=" -f 2)" >> $GITHUB_ENV
-        echo "MAKE_BOOT_IMAGE=$(cat config.env | grep "MAKE_BOOT_IMAGE" | head -n 1 | cut -d "=" -f 2)" >> $GITHUB_ENV
-        echo "SOURCE_BOOT_IMAGE=$(cat config.env | grep "SOURCE_BOOT_IMAGE" | head -n 1 | cut -d "=" -f 2)" >> $GITHUB_ENV
-    - name: Setup build kernel environment
+        echo "KERNEL_SOURCE=$(grep "^KERNEL_SOURCE=" config.env | cut -d "=" -f 2)" >> $GITHUB_ENV
+        echo "KERNEL_SOURCE_BRANCH=$(grep "^KERNEL_SOURCE_BRANCH=" config.env | cut -d "=" -f 2)" >> $GITHUB_ENV
+        echo "KERNEL_DEFCONFIG=$(grep "^KERNEL_DEFCONFIG=" config.env | cut -d "=" -f 2)" >> $GITHUB_ENV
+        echo "TARGET_ARCH=$(grep "^TARGET_ARCH=" config.env | cut -d "=" -f 2)" >> $GITHUB_ENV
+        echo "KERNEL_FILE=$(grep "^KERNEL_FILE=" config.env | cut -d "=" -f 2)" >> $GITHUB_ENV
+        echo "CLANG_VERSION=$(grep "^CLANG_VERSION=" config.env | cut -d "=" -f 2)" >> $GITHUB_ENV
+        echo "BUILD_EXTRA_COMMAND=$(grep "^EXTRA_BUILD_COMMAND=" config.env | cut -d "=" -f 2)" >> $GITHUB_ENV
+        echo "DISABLE_LTO=$(grep "^DISABLE-LTO=" config.env | cut -d "=" -f 2)" >> $GITHUB_ENV
+        echo "USE_KERNELSU=$(grep "^USE_KERNELSU=" config.env | cut -d "=" -f 2)" >> $GITHUB_ENV
+        echo "USE_KPROBES=$(grep "^USE_KPROBES=" config.env | cut -d "=" -f 2)" >> $GITHUB_ENV
+        echo "USE_OVERLAYFS=$(grep "^USE_OVERLAYFS=" config.env | cut -d "=" -f 2)" >> $GITHUB_ENV
+        echo "NEED_DTBO=$(grep "^NEED_DTBO=" config.env | cut -d "=" -f 2)" >> $GITHUB_ENV
+        echo "MAKE_BOOT_IMAGE=$(grep "^MAKE_BOOT_IMAGE=" config.env | cut -d "=" -f 2)" >> $GITHUB_ENV
+        echo "SOURCE_BOOT_IMAGE=$(grep "^SOURCE_BOOT_IMAGE=" config.env | cut -d "=" -f 2)" >> $GITHUB_ENV
+        
+    - name: Setup Build Environment
       run: |
         echo "BUILD_TIME=$(TZ=Asia/Shanghai date "+%Y%m%d%H%M")" >> $GITHUB_ENV
         echo "DEVICE=$(echo ${{ env.KERNEL_DEFCONFIG }} | sed 's!vendor/!!;s/_defconfig//;s/_user//;s/-perf//')" >> $GITHUB_ENV
         sudo apt-get update
-        sudo apt-get install git ccache automake flex lzop bison gperf build-essential zip curl zlib1g-dev g++-multilib libxml2-utils bzip2 libbz2-dev libbz2-1.0 libghc-bzlib-dev squashfs-tools pngcrush schedtool dpkg-dev liblz4-tool make optipng maven libssl-dev pwgen libswitch-perl policycoreutils minicom libxml-sax-base-perl libxml-simple-perl bc libc6-dev-i386 lib32ncurses5-dev libx11-dev lib32z-dev libgl1-mesa-dev xsltproc unzip device-tree-compiler python2 python3
-        mkdir -p $GITHUB_WORKSPACE/kernel_workspace
+        sudo apt-get install -y --no-install-recommends \
+          git ccache automake flex lzop bison gperf build-essential zip curl \
+          zlib1g-dev g++-multilib libxml2-utils bzip2 libbz2-dev libbz2-1.0 \
+          libghc-bzlib-dev squashfs-tools pngcrush schedtool dpkg-dev liblz4-tool \
+          make optipng maven libssl-dev pwgen libswitch-perl policycoreutils minicom \
+          libxml-sax-base-perl libxml-simple-perl bc libc6-dev-i386 lib32ncurses-dev \
+          libx11-dev lib32z-dev libgl1-mesa-dev xsltproc unzip device-tree-compiler \
+          python3 python-is-python3 wget cpio
+        mkdir -p ${{ env.WORKSPACE }}
 
     - name: Download Clang Toolchain
       run: |
-        mkdir clang
+        cd ${{ github.workspace }}
+        mkdir -p clang
         git clone https://github.com/vijaymalav564/vortex-clang.git -b master --depth=1 clang
-    - name: Download mkbootimg tools
+
+    - name: Download mkbootimg Tools
       if: env.MAKE_BOOT_IMAGE == 'true'
       run: |
-        cd $GITHUB_WORKSPACE/kernel_workspace
+        cd ${{ env.WORKSPACE }}
         git clone https://android.googlesource.com/platform/system/tools/mkbootimg tools -b master-kernel-build-2022 --depth=1
-        mkdir gcc-aosp
-        wget https://android.googlesource.com/platform/prebuilts/gcc/linux-x86/aarch64/aarch64-linux-android-4.9/+archive/606f80986096476912e04e5c2913685a8f2c3b65.tar.gz
-        tar -C gcc-aosp/ -zxvf 606f80986096476912e04e5c2913685a8f2c3b65.tar.gz
+        mkdir -p gcc-aosp
+        wget -q https://android.googlesource.com/platform/prebuilts/gcc/linux-x86/aarch64/aarch64-linux-android-4.9/+archive/606f80986096476912e04e5c2913685a8f2c3b65.tar.gz
+        tar -C gcc-aosp/ -zxf 606f80986096476912e04e5c2913685a8f2c3b65.tar.gz
 
-    - name: Download kernel source
+    - name: Download Kernel Source
       run: |
-        cd $GITHUB_WORKSPACE/kernel_workspace
-        git clone ${{ env.KERNEL_SOURCE }} -b ${{ env.KERNEL_SOURCE_BRANCH }} android-kernel --depth=1
+        cd ${{ env.WORKSPACE }}
+        git clone --depth=1 --single-branch \
+          ${{ env.KERNEL_SOURCE }} \
+          -b ${{ env.KERNEL_SOURCE_BRANCH }} \
+          android-kernel
 
-    - name: Kernel patch
+    - name: Download Source Boot Image
+      if: env.MAKE_BOOT_IMAGE == 'true' && env.SOURCE_BOOT_IMAGE != ''
       run: |
-        cd $GITHUB_WORKSPACE/kernel_workspace
-        git clone https://github.com/Arafattex/KernelSU_Action_mt6768 -b Lancelot-13.0 pt
-        cd android-kernel
-        git apply $GITHUB_WORKSPACE/kernel_workspace/pt/KernelSU.patch
-        
-
-    - name: Download source boot image
-      if: env.MAKE_BOOT_IMAGE == 'true'
-      run: |
-        cd $GITHUB_WORKSPACE/kernel_workspace
+        cd ${{ env.WORKSPACE }}
         wget -O boot-source.img ${{ env.SOURCE_BOOT_IMAGE }}
         if [ -f boot-source.img ]; then
-            echo "FORMAT_MKBOOTING=$(echo `tools/unpack_bootimg.py --boot_img=boot-source.img --format mkbootimg`)" >> $GITHUB_ENV
+            echo "FORMAT_MKBOOTING=$(tools/unpack_bootimg.py --boot_img=boot-source.img --format mkbootimg)" >> $GITHUB_ENV
             echo "HAVE_SOURCE_BOOT_IMAGE=true" >> $GITHUB_ENV
         else
-            echo "Source boot image is empty"
+            echo "::warning::Source boot image download failed"
+            echo "HAVE_SOURCE_BOOT_IMAGE=false" >> $GITHUB_ENV
         fi
   
     - name: Setup KernelSU
       if: env.USE_KERNELSU == 'true'
       run: |
-        cd $GITHUB_WORKSPACE/kernel_workspace/android-kernel
+        cd ${{ env.WORKSPACE }}/android-kernel
+        
+        # Install KernelSU using official method
         curl -LSs "https://raw.githubusercontent.com/tiann/KernelSU/main/kernel/setup.sh" | bash -s main
-        if [ ${{ env.USE_KPROBES }} = true ]; then
-            echo "CONFIG_MODULES=y" >> arch/${{ env.TARGET_ARCH }}/configs/${{ env.KERNEL_DEFCONFIG }}
-            echo "CONFIG_OVERLAY_FS=y" >> arch/${{ env.TARGET_ARCH }}/configs/${{ env.KERNEL_DEFCONFIG }}
+        
+        # Configure KernelSU options
+        DEFCONFIG_PATH="arch/${{ env.TARGET_ARCH }}/configs/${{ env.KERNEL_DEFCONFIG }}"
+        
+        if [ "${{ env.USE_KPROBES }}" = "true" ]; then
+            echo "CONFIG_MODULES=y" >> $DEFCONFIG_PATH
+            echo "CONFIG_KPROBES=y" >> $DEFCONFIG_PATH
+            echo "CONFIG_HAVE_KPROBES=y" >> $DEFCONFIG_PATH
+            echo "CONFIG_KPROBE_EVENTS=y" >> $DEFCONFIG_PATH
         fi
-        if [ ${{ env.DISABLE-LTO }} = true ]; then
-            sed -i 's/CONFIG_LTO=y/CONFIG_LTO=n/' arch/${{ env.TARGET_ARCH }}/configs/${{ env.KERNEL_DEFCONFIG }}
-            sed -i 's/CONFIG_LTO_CLANG=y/CONFIG_LTO_CLANG=n/' arch/${{ env.TARGET_ARCH }}/configs/${{ env.KERNEL_DEFCONFIG }}
-            sed -i 's/CONFIG_THINLTO=y/CONFIG_THINLTO=n/' arch/${{ env.TARGET_ARCH }}/configs/${{ env.KERNEL_DEFCONFIG }}
-            echo "CONFIG_LTO_NONE=y" >> arch/${{ env.TARGET_ARCH }}/configs/${{ env.KERNEL_DEFCONFIG }}
+        
+        if [ "${{ env.USE_OVERLAYFS }}" = "true" ]; then
+            echo "CONFIG_OVERLAY_FS=y" >> $DEFCONFIG_PATH
         fi
+        
+        if [ "${{ env.DISABLE_LTO }}" = "true" ]; then
+            sed -i 's/CONFIG_LTO=y/CONFIG_LTO=n/' $DEFCONFIG_PATH
+            sed -i 's/CONFIG_LTO_CLANG=y/CONFIG_LTO_CLANG=n/' $DEFCONFIG_PATH
+            sed -i 's/CONFIG_THINLTO=y/CONFIG_THINLTO=n/' $DEFCONFIG_PATH
+            echo "CONFIG_LTO_NONE=y" >> $DEFCONFIG_PATH
+        fi
+        
         echo "UPLOADNAME=-KernelSU" >> $GITHUB_ENV
 
-    - name: Generate kernel configuration
+    - name: Generate Kernel Configuration
       run: |
-        cd $GITHUB_WORKSPACE/kernel_workspace/android-kernel
-        export PATH=$GITHUB_WORKSPACE/clang/bin:$PATH
+        cd ${{ env.WORKSPACE }}/android-kernel
+        export PATH=${{ github.workspace }}/clang/bin:$PATH
         export ARCH=${{ env.TARGET_ARCH }}
         export SUBARCH=${{ env.TARGET_ARCH }}
         export KBUILD_COMPILER_STRING="$(clang --version | head -n 1 | perl -pe 's/\(http.*?\)//gs' | sed -e 's/  */ /g' -e 's/[[:space:]]*$//')"
         export KBUILD_BUILD_HOST=GitHub-Action
         export KBUILD_BUILD_USER=$(echo ${{ github.actor }} | tr A-Z a-z)
+        
         make -j$(nproc --all) O=out ARCH=${{ env.TARGET_ARCH }} CC=clang ${{ env.KERNEL_DEFCONFIG }}
 
-    - name: Build kernel
+    - name: Build Kernel
       run: |
-        cd $GITHUB_WORKSPACE/kernel_workspace/android-kernel
-        export PATH=$GITHUB_WORKSPACE/clang/bin:$PATH
+        cd ${{ env.WORKSPACE }}/android-kernel
+        export PATH=${{ github.workspace }}/clang/bin:$PATH
         export ARCH=${{ env.TARGET_ARCH }}
         export SUBARCH=${{ env.TARGET_ARCH }}
         export KBUILD_COMPILER_STRING="$(clang --version | head -n 1 | perl -pe 's/\(http.*?\)//gs' | sed -e 's/  */ /g' -e 's/[[:space:]]*$//')"
         export KBUILD_BUILD_HOST=GitHub-Action
         export KBUILD_BUILD_USER=$(echo ${{ github.actor }} | tr A-Z a-z)
-        make -j$(nproc --all) O=out ARCH=arm64 savedefconfig
+        
+        make -j$(nproc --all) O=out ARCH=${{ env.TARGET_ARCH }} savedefconfig
         cp -f out/defconfig arch/${{ env.TARGET_ARCH }}/configs/${{ env.KERNEL_DEFCONFIG }}
-        make -j$(nproc --all) O=out ARCH=${{ env.TARGET_ARCH }} CC=clang CROSS_COMPILE=aarch64-linux-gnu- ${{ env.BUILD_EXTRA_COMMAND }}
+        
+        make -j$(nproc --all) O=out \
+          ARCH=${{ env.TARGET_ARCH }} \
+          CC=clang \
+          CROSS_COMPILE=aarch64-linux-gnu- \
+          CROSS_COMPILE_ARM32=arm-linux-gnueabi- \
+          ${{ env.BUILD_EXTRA_COMMAND }}
 
-    - name: Check a kernel output files
+    - name: Check Kernel Output Files
       run: |
-       cd $GITHUB_WORKSPACE/kernel_workspace
-       if [ -f android-kernel/out/arch/${{ env.TARGET_ARCH }}/boot/${{ env.KERNEL_FILE }} ]; then
-           echo "CHECK_FILE_IS_OK=true" >> $GITHUB_ENV
-       else
-           echo "Kernel output file is empty"
-       fi
-       if [ -f android-kernel/out/arch/${{ env.TARGET_ARCH }}/boot/dtbo.img ]; then
-           echo "CHECK_DTBO_IS_OK=true" >> $GITHUB_ENV
-       else
-           echo "DTBO image is empty"
-       fi
+        cd ${{ env.WORKSPACE }}
+        
+        if [ -f android-kernel/out/arch/${{ env.TARGET_ARCH }}/boot/${{ env.KERNEL_FILE }} ]; then
+            echo "CHECK_FILE_IS_OK=true" >> $GITHUB_ENV
+            echo "::notice::Kernel image built successfully"
+        else
+            echo "CHECK_FILE_IS_OK=false" >> $GITHUB_ENV
+            echo "::error::Kernel output file not found"
+        fi
+        
+        if [ -f android-kernel/out/arch/${{ env.TARGET_ARCH }}/boot/dtbo.img ]; then
+            echo "CHECK_DTBO_IS_OK=true" >> $GITHUB_ENV
+            echo "::notice::DTBO image built successfully"
+        else
+            echo "CHECK_DTBO_IS_OK=false" >> $GITHUB_ENV
+        fi
 
-    - name: Make Anykernel3
+    - name: Prepare AnyKernel3
+      if: env.CHECK_FILE_IS_OK == 'true' || env.CHECK_DTBO_IS_OK == 'true'
       run: |
-        cd $GITHUB_WORKSPACE/kernel_workspace
-        git clone https://github.com/osm0sis/AnyKernel3
+        cd ${{ env.WORKSPACE }}
+        git clone --depth=1 https://github.com/osm0sis/AnyKernel3
+        
         sed -i 's/do.devicecheck=1/do.devicecheck=0/g' AnyKernel3/anykernel.sh
         sed -i 's!block=/dev/block/platform/omap/omap_hsmmc.0/by-name/boot;!block=auto;!g' AnyKernel3/anykernel.sh
         sed -i 's/is_slot_device=0;/is_slot_device=auto;/g' AnyKernel3/anykernel.sh
-        if [ ${{ env.CHECK_FILE_IS_OK }} = true ]; then
+        
+        if [ "${{ env.CHECK_FILE_IS_OK }}" = "true" ]; then
             cp android-kernel/out/arch/${{ env.TARGET_ARCH }}/boot/${{ env.KERNEL_FILE }} AnyKernel3/
-        elif [ ${{ env.CHECK_DTBO_IS_OK }} = true ]; then
+        fi
+        
+        if [ "${{ env.CHECK_DTBO_IS_OK }}" = "true" ]; then
             cp android-kernel/out/arch/${{ env.TARGET_ARCH }}/boot/dtbo.img AnyKernel3/
         fi
+        
         rm -rf AnyKernel3/.git* AnyKernel3/README.md
 
-    - name: Make boot image
+    - name: Make Boot Image
       if: env.HAVE_SOURCE_BOOT_IMAGE == 'true' && env.CHECK_FILE_IS_OK == 'true'
       run: |
-        cd $GITHUB_WORKSPACE/kernel_workspace
+        cd ${{ env.WORKSPACE }}
         tools/unpack_bootimg.py --boot_img boot-source.img
         cp android-kernel/out/arch/${{ env.TARGET_ARCH }}/boot/${{ env.KERNEL_FILE }} out/kernel
         tools/mkbootimg.py ${{ env.FORMAT_MKBOOTING }} -o boot.img
+        
         if [ -f boot.img ]; then
             echo "MAKE_BOOT_IMAGE_IS_OK=true" >> $GITHUB_ENV
+            echo "::notice::Boot image created successfully"
         else
-            echo "Boot image is empty"
+            echo "MAKE_BOOT_IMAGE_IS_OK=false" >> $GITHUB_ENV
+            echo "::warning::Boot image creation failed"
         fi
     
-    - name: Upload ${{ env.KERNEL_FILE }}
+    - name: Upload Kernel Image
       if: env.CHECK_FILE_IS_OK == 'true'
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: ${{ env.KERNEL_FILE }}${{ env.UPLOADNAME }}-${{ env.DEVICE }}-${{ env.BUILD_TIME }}
-        path: kernel_workspace/android-kernel/out/arch/${{ env.TARGET_ARCH }}/boot/${{ env.KERNEL_FILE }}
+        path: ${{ env.WORKSPACE }}/android-kernel/out/arch/${{ env.TARGET_ARCH }}/boot/${{ env.KERNEL_FILE }}
+        compression-level: 9
 
-    - name: Upload AnyKernel3
-      if: env.CHECK_FILE_IS_OK == 'true'
-      uses: actions/upload-artifact@v3
+    - name: Upload AnyKernel3 Package
+      if: env.CHECK_FILE_IS_OK == 'true' || env.CHECK_DTBO_IS_OK == 'true'
+      uses: actions/upload-artifact@v4
       with:
         name: AnyKernel3${{ env.UPLOADNAME }}-${{ env.DEVICE }}-${{ env.BUILD_TIME }}
-        path: kernel_workspace/AnyKernel3/*
+        path: ${{ env.WORKSPACE }}/AnyKernel3/*
+        compression-level: 9
 
-    - name: Upload DTBO image
+    - name: Upload DTBO Image
       if: env.CHECK_DTBO_IS_OK == 'true'
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: dtbo-${{ env.DEVICE }}-${{ env.BUILD_TIME }}
-        path: kernel_workspace/android-kernel/out/arch/${{ env.TARGET_ARCH }}/boot/dtbo.img
+        path: ${{ env.WORKSPACE }}/android-kernel/out/arch/${{ env.TARGET_ARCH }}/boot/dtbo.img
+        compression-level: 9
 
-    - name: Upload boot image
+    - name: Upload Boot Image
       if: env.MAKE_BOOT_IMAGE_IS_OK == 'true'
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: boot${{ env.UPLOADNAME }}-${{ env.DEVICE }}-${{ env.BUILD_TIME }}
-        path: kernel_workspace/boot.img
+        path: ${{ env.WORKSPACE }}/boot.img
+        compression-level: 9
