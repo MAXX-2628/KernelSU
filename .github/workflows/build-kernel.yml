@@ -85,6 +85,21 @@ jobs:
           -b ${{ env.KERNEL_SOURCE_BRANCH }} \
           android-kernel
 
+    - name: Disable MediaTek DrvGen (CI safe fix)
+      run: |
+        cd ${{ env.WORKSPACE }}/android-kernel
+
+        echo "Disabling MediaTek DrvGen"
+
+        sed -i 's|../tools/dct/DrvGen.py.*|@echo "Skipping DrvGen (MediaTek proprietary tool)"|' scripts/drvgen/drvgen.mk
+
+        mkdir -p arch/arm64/boot/dts/mediatek/lancelot
+
+        cat > arch/arm64/boot/dts/mediatek/lancelot/cust.dtsi <<'EOF'
+/dts-v1/;
+/ {
+};
+EOF
     - name: Download Source Boot Image
       if: env.MAKE_BOOT_IMAGE == 'true' && env.SOURCE_BOOT_IMAGE != ''
       run: |
