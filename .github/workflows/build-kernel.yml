@@ -61,14 +61,12 @@ jobs:
       run: |
         cd ${{ github.workspace }}
         mkdir -p gcc64 gcc32
-        # Download ARM64 GCC
-        wget -q https://android.googlesource.com/platform/prebuilts/gcc/linux-x86/aarch64/aarch64-linux-android-4.9/+archive/refs/heads/android-msm-coral-4.14-android10.tar.gz -O gcc64.tar.gz
-        tar -xf gcc64.tar.gz -C gcc64
-        rm -f gcc64.tar.gz
-        # Download ARM32 GCC
-        wget -q https://android.googlesource.com/platform/prebuilts/gcc/linux-x86/arm/arm-linux-androideabi-4.9/+archive/refs/heads/android-msm-coral-4.14-android10.tar.gz -O gcc32.tar.gz
-        tar -xf gcc32.tar.gz -C gcc32
-        rm -f gcc32.tar.gz
+        
+        # Download ARM64 GCC from reliable mirror
+        git clone --depth=1 https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_aarch64_aarch64-linux-android-4.9 gcc64
+        
+        # Download ARM32 GCC from reliable mirror  
+        git clone --depth=1 https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_arm_arm-linux-androideabi-4.9 gcc32
 
     - name: Download mkbootimg Tools
       if: env.MAKE_BOOT_IMAGE == 'true'
