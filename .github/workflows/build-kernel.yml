@@ -12,7 +12,7 @@ jobs:
     - uses: actions/checkout@v4
     - name: Setup Configuration
       run: |
-        source config. env
+        source config.env
         echo "KERNEL_SOURCE=$KERNEL_SOURCE" >> $GITHUB_ENV
         echo "KERNEL_SOURCE_BRANCH=$KERNEL_SOURCE_BRANCH" >> $GITHUB_ENV
         echo "KERNEL_DEFCONFIG=$KERNEL_DEFCONFIG" >> $GITHUB_ENV
